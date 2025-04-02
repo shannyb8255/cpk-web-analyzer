@@ -1,15 +1,16 @@
 package com.cpk.cpk_web_analyzer;
 
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
-import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
+import java.io.*;
 
 @Controller
 public class ExcelController {
@@ -20,28 +21,30 @@ public class ExcelController {
     }
 
     @PostMapping("/analyze")
-    public String handleFileUpload(@RequestParam("file") MultipartFile file, Model model) {
+    public ResponseEntity<byte[]> handleFileUpload(@RequestParam("file") MultipartFile file) {
         if (file.isEmpty()) {
-            model.addAttribute("message", "⚠️ Please select a file to upload.");
-            return "upload";
+            return ResponseEntity.badRequest().body(null);
         }
 
-        try {
-            // Save uploaded file to temp directory
-            File tempFile = File.createTempFile("uploaded-", ".xlsx");
-            try (FileOutputStream fos = new FileOutputStream(tempFile)) {
-                fos.write(file.getBytes());
-            }
+        try (InputStream inputStream = file.getInputStream();
+             XSSFWorkbook workbook = new XSSFWorkbook(inputStream);
+             ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
 
-            // Run your processing logic
+            // Process the Excel file (in memory)
             ExcelCapabilityTemplate processor = new ExcelCapabilityTemplate();
-            processor.processFile(tempFile);
+            processor.processWorkbook(workbook);
 
-            model.addAttribute("message", "✅ Analysis complete! File processed successfully.");
+            // Write updated workbook to output stream
+            workbook.write(outputStream);
+
+            // Return file for download
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=cpk-analysis.xlsx")
+                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                    .body(outputStream.toByteArray());
+
         } catch (IOException e) {
-            model.addAttribute("message", "❌ Error processing file: " + e.getMessage());
+            return ResponseEntity.internalServerError().body(null);
         }
-
-        return "upload";
     }
 }
